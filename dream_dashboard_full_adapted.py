@@ -334,6 +334,113 @@ else:
     st.write("No co-occurring tags found for selected type.")
 
 # -------------------------
+# NEW: Degrees of Separation
+# -------------------------
+st.header("🔗 Degrees of Separation")
+st.markdown("Explore how closely connected any two tags are through intermediate tags.")
+
+if edge_list:
+    # Build full graph from edge list
+    G_full = nx.Graph()
+    for _, r in edge_df.iterrows():
+        G_full.add_edge(r["tag1"], r["tag2"], weight=int(r["weight"]))
+    
+    col1, col2 = st.columns(2)
+    all_tags = sorted(G_full.nodes())
+    
+    with col1:
+        tag_a = st.selectbox("From tag", all_tags, key="dos_from")
+    with col2:
+        tag_b = st.selectbox("To tag", [t for t in all_tags if t != tag_a], key="dos_to")
+    
+    if st.button("Find Connection Path"):
+        try:
+            if nx.has_path(G_full, tag_a, tag_b):
+                path = nx.shortest_path(G_full, tag_a, tag_b)
+                degrees = len(path) - 1
+                
+                st.success(f"**{degrees} degrees of separation** between '{tag_a}' and '{tag_b}'")
+                st.write("**Path:** " + " → ".join(path))
+                
+                # Visualize the path
+                path_edges = [(path[i], path[i+1]) for i in range(len(path)-1)]
+                G_path = nx.Graph()
+                G_path.add_edges_from(path_edges)
+                
+                pos_path = nx.spring_layout(G_path, k=2, seed=42)
+                
+                # Draw edges
+                edge_x_path = []
+                edge_y_path = []
+                for e in G_path.edges():
+                    x0, y0 = pos_path[e[0]]
+                    x1, y1 = pos_path[e[1]]
+                    edge_x_path += [x0, x1, None]
+                    edge_y_path += [y0, y1, None]
+                
+                # Draw nodes
+                node_x_path = []
+                node_y_path = []
+                node_text = []
+                node_color = []
+                for i, n in enumerate(path):
+                    x, y = pos_path[n]
+                    node_x_path.append(x)
+                    node_y_path.append(y)
+                    node_text.append(n)
+                    if i == 0:
+                        node_color.append('green')
+                    elif i == len(path) - 1:
+                        node_color.append('red')
+                    else:
+                        node_color.append('orange')
+                
+                edge_trace_path = go.Scatter(x=edge_x_path, y=edge_y_path, mode='lines',
+                                            line=dict(width=3, color='#888'), hoverinfo='none')
+                node_trace_path = go.Scatter(x=node_x_path, y=node_y_path, mode='markers+text',
+                                            text=node_text, textposition="top center",
+                                            marker=dict(size=25, color=node_color, line=dict(width=2, color='white')))
+                
+                fig_path = go.Figure(data=[edge_trace_path, node_trace_path])
+                fig_path.update_layout(title=f"Connection Path: {tag_a} → {tag_b}",
+                                      showlegend=False, height=400,
+                                      xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                                      yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+                st.plotly_chart(fig_path, use_container_width=True)
+                
+                # Show all shortest paths if multiple exist
+                all_paths = list(nx.all_shortest_paths(G_full, tag_a, tag_b))
+                if len(all_paths) > 1:
+                    st.info(f"Found {len(all_paths)} equally short paths (showing first):")
+                    for i, p in enumerate(all_paths[:5]):
+                        st.write(f"{i+1}. " + " → ".join(p))
+            else:
+                st.warning(f"No connection found between '{tag_a}' and '{tag_b}' in the current network.")
+        except Exception as e:
+            st.error(f"Error finding path: {e}")
+    
+    # Compute average degrees of separation
+    st.subheader("Network Connectivity Statistics")
+    if nx.is_connected(G_full):
+        avg_path_length = nx.average_shortest_path_length(G_full)
+        diameter = nx.diameter(G_full)
+        st.metric("Average Path Length", f"{avg_path_length:.2f}")
+        st.metric("Network Diameter", diameter)
+        st.caption("Average path length = average degrees of separation between all tag pairs")
+    else:
+        components = list(nx.connected_components(G_full))
+        st.info(f"Network has {len(components)} disconnected components. Showing stats for largest:")
+        largest = max(components, key=len)
+        G_largest = G_full.subgraph(largest)
+        avg_path = nx.average_shortest_path_length(G_largest)
+        diam = nx.diameter(G_largest)
+        st.metric("Avg Path Length (largest component)", f"{avg_path:.2f}")
+        st.metric("Diameter (largest component)", diam)
+
+else:
+    st.write("Not enough co-occurrence data to compute degrees of separation.")
+
+# -------------------------
 # Complexity & Entropy
 # -------------------------
 st.header("Complexity & Diversity")
@@ -371,44 +478,188 @@ if not rec_df.empty:
 else:
     st.write("Not enough recurrence data for selected type.")
 
-# Markov transitions (first-order) & Sankey
-st.subheader("First-order Markov transitions (within-dream tag order)")
+# -------------------------
+# NEW: Advanced Markov Chain Analysis
+# -------------------------
+st.header("🎲 Markov Chain Modeling & Prediction")
+st.markdown("Build transition probability matrices and predict likely next tags.")
+
+# Build transition pairs
 pairs = []
-# define sequence order: use tags_by_type order if preserved; otherwise alphabetical
 for _, r in df.iterrows():
     tb = r.get("tags_by_type", {}) or {}
     seq = []
     if sel_type == "ALL":
-        # flatten by tag_type stable order (sorted keys)
         for k in sorted(tb.keys()):
             seq += tb.get(k, [])
     else:
         seq = tb.get(sel_type, [])
-    # make pairs within same dream (A -> B if B appears after A in the dream's tag sequence)
     for i in range(len(seq)-1):
         pairs.append((seq[i], seq[i+1]))
+
 if pairs:
     pairs_df = pd.DataFrame(pairs, columns=["from","to"])
     trans = pairs_df.groupby(["from","to"]).size().reset_index(name="count")
     trans["prob"] = trans.groupby("from")["count"].transform(lambda s: s / s.sum())
-    st.write("Top transitions (from → to):")
-    st.dataframe(trans.sort_values("count", ascending=False).head(80))
-    # build Sankey (limit nodes for readability)
-    # choose top N nodes by occurrence
+    
+    st.subheader("Transition Probability Matrix")
+    st.write("First-order Markov transitions (from → to):")
+    st.dataframe(trans.sort_values("prob", ascending=False).head(100))
+    
+    # Build transition matrix
+    all_states = sorted(set(trans["from"].unique()) | set(trans["to"].unique()))
+    trans_matrix = pd.DataFrame(0.0, index=all_states, columns=all_states)
+    
+    for _, row in trans.iterrows():
+        trans_matrix.loc[row["from"], row["to"]] = row["prob"]
+    
+    # Interactive predictor
+    st.subheader("🔮 Tag Sequence Predictor")
+    st.markdown("Enter current tags and see predicted next tags based on Markov transitions.")
+    
+    current_tag = st.selectbox("Current tag", all_states, key="markov_current")
+    
+    if st.button("Predict Next Tags"):
+        next_probs = trans_matrix.loc[current_tag]
+        next_probs = next_probs[next_probs > 0].sort_values(ascending=False)
+        
+        if len(next_probs) > 0:
+            st.success(f"**Top predicted tags after '{current_tag}':**")
+            
+            pred_df = pd.DataFrame({
+                'Next Tag': next_probs.index,
+                'Probability': next_probs.values,
+                'Percentage': (next_probs.values * 100).round(1)
+            })
+            
+            st.dataframe(pred_df.head(15))
+            
+            # Visualize predictions
+            fig_pred = px.bar(pred_df.head(10), x='Next Tag', y='Percentage',
+                             title=f"Probability Distribution of Next Tags after '{current_tag}'")
+            st.plotly_chart(fig_pred, use_container_width=True)
+        else:
+            st.warning(f"No recorded transitions from '{current_tag}'")
+    
+    # Multi-step prediction
+    st.subheader("🎯 Multi-Step Sequence Prediction")
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        start_tag = st.selectbox("Starting tag", all_states, key="markov_start")
+    with col2:
+        n_steps = st.slider("Steps ahead", 1, 10, 3)
+    
+    if st.button("Generate Sequence"):
+        sequence = [start_tag]
+        current = start_tag
+        
+        for step in range(n_steps):
+            next_probs = trans_matrix.loc[current]
+            next_probs = next_probs[next_probs > 0]
+            
+            if len(next_probs) == 0:
+                st.info(f"Chain stopped at step {step+1}: no transitions from '{current}'")
+                break
+            
+            # Choose most likely next tag
+            next_tag = next_probs.idxmax()
+            sequence.append(next_tag)
+            current = next_tag
+        
+        st.success("**Predicted Sequence:**")
+        st.write(" → ".join(sequence))
+        
+        # Show probabilities at each step
+        st.write("**Transition Probabilities:**")
+        for i in range(len(sequence)-1):
+            prob = trans_matrix.loc[sequence[i], sequence[i+1]]
+            st.write(f"Step {i+1}: {sequence[i]} → {sequence[i+1]} ({prob:.1%})")
+    
+    # Stationary distribution
+    st.subheader("📊 Stationary Distribution")
+    st.markdown("Long-term probability of being in each state (if chain converges)")
+    
+    try:
+        # Convert to numpy for eigenvalue calculation
+        P = trans_matrix.values
+        if P.shape[0] > 0 and np.any(P > 0):
+            # Find stationary distribution via eigenvector
+            eigenvalues, eigenvectors = np.linalg.eig(P.T)
+            stationary_idx = np.argmin(np.abs(eigenvalues - 1.0))
+            stationary = np.real(eigenvectors[:, stationary_idx])
+            stationary = stationary / stationary.sum()
+            
+            stat_df = pd.DataFrame({
+                'Tag': all_states,
+                'Stationary Probability': stationary,
+                'Percentage': (stationary * 100).round(2)
+            }).sort_values('Stationary Probability', ascending=False)
+            
+            st.dataframe(stat_df.head(20))
+            
+            fig_stat = px.bar(stat_df.head(15), x='Tag', y='Percentage',
+                            title="Stationary Distribution (Top 15 Tags)")
+            st.plotly_chart(fig_stat, use_container_width=True)
+            
+            st.caption("Stationary distribution shows the long-run probability of each tag appearing in the sequence.")
+    except Exception as e:
+        st.info(f"Could not compute stationary distribution: {e}")
+    
+    # Sankey diagram for transitions
+    st.subheader("Transition Flow Diagram (Sankey)")
     node_limit = st.slider("Max distinct tags in Sankey", 5, 60, 30)
     top_nodes = pd.concat([trans["from"], trans["to"]]).value_counts().head(node_limit).index.tolist()
     trans_sank = trans[trans["from"].isin(top_nodes) & trans["to"].isin(top_nodes)]
+    
     if not trans_sank.empty:
         label_map = {n:i for i,n in enumerate(sorted(top_nodes))}
         sources = trans_sank["from"].map(label_map).tolist()
         targets = trans_sank["to"].map(label_map).tolist()
         values = trans_sank["count"].tolist()
-        sankey = go.Sankey(node=dict(label=list(sorted(top_nodes))), link=dict(source=sources, target=targets, value=values))
+        sankey = go.Sankey(node=dict(label=list(sorted(top_nodes))), 
+                          link=dict(source=sources, target=targets, value=values))
         fig_sank = go.Figure(sankey)
         fig_sank.update_layout(title="Tag transition Sankey (limited nodes)", height=600)
         st.plotly_chart(fig_sank, use_container_width=True)
+    
+    # Monte Carlo simulation
+    st.subheader("🎲 Monte Carlo Simulation")
+    st.markdown("Generate random dream sequences using the learned transition probabilities")
+    
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        sim_start = st.selectbox("Starting tag for simulation", all_states, key="sim_start")
+    with col2:
+        sim_length = st.slider("Sequence length", 3, 20, 8)
+    with col3:
+        n_simulations = st.slider("# Simulations", 1, 10, 3)
+    
+    if st.button("Run Simulation"):
+        st.write("**Generated Dream Sequences:**")
+        
+        for sim_num in range(n_simulations):
+            sequence = [sim_start]
+            current = sim_start
+            
+            for step in range(sim_length - 1):
+                next_probs = trans_matrix.loc[current]
+                next_probs = next_probs[next_probs > 0]
+                
+                if len(next_probs) == 0:
+                    break
+                
+                # Randomly sample based on probabilities
+                next_tag = np.random.choice(next_probs.index, p=next_probs.values)
+                sequence.append(next_tag)
+                current = next_tag
+            
+            st.write(f"**Simulation {sim_num + 1}:** " + " → ".join(sequence))
+        
+        st.caption("Each simulation randomly samples from the transition probabilities, creating possible dream tag sequences.")
+
 else:
-    st.write("Not enough sequential data for Markov transitions for selected type.")
+    st.write("Not enough sequential data for Markov modeling for selected type.")
 
 # -------------------------
 # Search & Examples
@@ -441,4 +692,4 @@ if st.button("Prepare processed CSV"):
     out.to_csv(buf, index=False)
     st.download_button("Download processed CSV", data=buf.getvalue(), file_name="dreams_processed_full.csv", mime="text/csv")
 
-st.caption("Built with ❤️. If you want additional features (wordclouds, sentiment scoring, clustering exports, or a live link), tell me which and I'll add them.")
+st.caption("Built with 🤖, by AI")
