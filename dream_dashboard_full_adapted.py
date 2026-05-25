@@ -274,19 +274,29 @@ with t2:
             # Calculate cumulative sum
             cumulative = pivot.cumsum()
             
-            # Remove rows before each tag reaches 1 (i.e., keep only from first occurrence)
-            cumulative_trimmed = cumulative.loc[(cumulative > 0).any(axis=1)]
+            # For each tag, only show data starting from first occurrence
+            cumulative_trimmed = cumulative.copy()
             for col in cumulative_trimmed.columns:
-                first_nonzero = (cumulative_trimmed[col] > 0).idxmax()
-                cumulative_trimmed.loc[:first_nonzero, col] = 0
-                cumulative_trimmed.loc[first_nonzero:, col] = cumulative.loc[first_nonzero:, col]
+                first_occurrence = (cumulative[col] > 0).idxmax()
+                cumulative_trimmed.loc[:first_occurrence, col] = None
             
-            # Create line chart
-            fig_line = px.line(cumulative_trimmed, markers=True, title="Tag frequency over time (cumulative)")
+            # Create line chart manually with individual traces for better hover control
+            fig_line = go.Figure()
+            for tag in cumulative_trimmed.columns:
+                data = cumulative_trimmed[tag].dropna()
+                fig_line.add_trace(go.Scatter(
+                    x=data.index,
+                    y=data.values,
+                    mode='lines+markers',
+                    name=tag,
+                    hovertemplate=f'<b>{tag}</b><br>Month: %{{x}}<br>Count: %{{y}}<extra></extra>'
+                ))
+            
             fig_line.update_layout(
+                title="Tag frequency over time (cumulative)",
                 xaxis_title="Month",
                 yaxis_title="Cumulative Count",
-                hovermode="x unified"
+                hovermode="x"
             )
             st.plotly_chart(fig_line, use_container_width=True)
         else:
