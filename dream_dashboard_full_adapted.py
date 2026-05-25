@@ -350,13 +350,13 @@ if edge_list:
     
     # Allow users to filter the network by selecting specific tags
     selected_network_tags = st.multiselect(
-        "Select tags to include in network (leave empty for all top edges)",
+        "Select tags to include in network (leave empty for all)",
         all_network_tags,
         key="network_tags",
         help="Filter network to show only edges involving selected tags"
     )
     
-    # Filter edges based on selected tags
+    # Filter by selected tags
     if selected_network_tags:
         filtered_edges = edge_df[
             (edge_df["tag1"].isin(selected_network_tags)) | 
@@ -365,8 +365,9 @@ if edge_list:
     else:
         filtered_edges = edge_df
     
-    max_edges = st.slider("Max edges to show in network", 20, 500, 120)
-    top_edges = filtered_edges.head(max_edges)
+    # Option to filter by minimum co-occurrence weight
+    min_weight = st.slider("Minimum co-occurrences to show", 1, int(filtered_edges["weight"].max()), 1)
+    top_edges = filtered_edges[filtered_edges["weight"] >= min_weight]
     
     G = nx.Graph()
     for _, r in top_edges.iterrows():
@@ -374,29 +375,49 @@ if edge_list:
     
     if len(G.nodes()) > 0:
         node_sizes = {t: (1 + (tag_counts.get(t,0) if not tag_counts.empty else 0)) for t in G.nodes()}
-        pos = nx.spring_layout(G, k=0.5, seed=42)
+        
+        # Better layout parameters to spread out the network
+        pos = nx.spring_layout(G, k=2, iterations=100, seed=42, scale=2)
+        
         edge_x=[]; edge_y=[]
         for e in G.edges():
             x0,y0 = pos[e[0]]
             x1,y1 = pos[e[1]]
             edge_x += [x0, x1, None]
             edge_y += [y0, y1, None]
+        
         node_x=[]; node_y=[]; text=[]; size=[]
         for n in G.nodes():
             x,y = pos[n]
             node_x.append(x); node_y.append(y)
             text.append(f"{n} ({tag_counts.get(n,0) if not tag_counts.empty else 0})")
             size.append(math.sqrt(node_sizes[n]) * 6 + 6)
-        edge_trace = go.Scatter(x=edge_x, y=edge_y, mode='lines', line=dict(width=1), hoverinfo='none')
-        node_trace = go.Scatter(x=node_x, y=node_y, mode='markers+text', text=[n for n in G.nodes()], textposition="top center",
-                                hovertext=text, marker=dict(size=size, showscale=False))
+        
+        edge_trace = go.Scatter(x=edge_x, y=edge_y, mode='lines', 
+                                line=dict(width=0.5, color='rgba(125,125,125,0.5)'), 
+                                hoverinfo='none', name='')
+        node_trace = go.Scatter(x=node_x, y=node_y, mode='markers+text', 
+                                text=[n for n in G.nodes()], 
+                                textposition="top center",
+                                textfont=dict(size=10),
+                                hovertext=text, 
+                                marker=dict(size=size, color='lightblue', line=dict(width=2, color='darkblue')),
+                                name='')
+        
         fig_net = go.Figure(data=[edge_trace, node_trace])
-        fig_net.update_layout(title="Tag co-occurrence network", showlegend=False,
-                              xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                              yaxis=dict(showgrid=False, zeroline=False, showticklabels=False), height=600)
+        fig_net.update_layout(
+            title=f"Tag co-occurrence network ({len(G.nodes())} nodes, {len(G.edges())} edges)",
+            showlegend=False,
+            hovermode='closest',
+            margin=dict(b=20,l=5,r=5,t=40),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            height=700,
+            plot_bgcolor='rgba(240,240,240,0.9)'
+        )
         st.plotly_chart(fig_net, use_container_width=True)
     else:
-        st.write("No nodes to display with selected tag filters.")
+        st.write("No nodes to display with selected filters.")
 else:
     st.write("No co-occurring tags found for selected type.")
 # -------------------------
