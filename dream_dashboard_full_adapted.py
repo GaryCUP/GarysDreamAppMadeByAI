@@ -296,7 +296,7 @@ with t2:
                 title="Tag frequency over time (cumulative)",
                 xaxis_title="Date",
                 yaxis_title="Cumulative Count",
-                hovermode="closest"
+                hovermode="x unified"
             )
             st.plotly_chart(fig_line, use_container_width=True)
         else:
