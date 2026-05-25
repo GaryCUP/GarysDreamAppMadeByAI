@@ -220,87 +220,25 @@ t1, t2 = st.columns(2)
 
 with t1:
     st.subheader("Dreams per day")
-    daily = df.groupby("dream_date").size().reset_index(name="count")
-    if not daily.empty:
-        fig_day = px.line(daily, x="dream_date", y="count", markers=True, title="Dreams per day")
-        fig_day.update_layout(xaxis_title="Date")
-        st.plotly_chart(fig_day, use_container_width=True)
+    # Check what columns are available
+    date_col = None
+    if "dream_date" in df.columns:
+        date_col = "dream_date"
+    elif "date" in df.columns:
+        date_col = "date"
+    elif "created_at" in df.columns:
+        date_col = "created_at"
+    
+    if date_col:
+        daily = df.groupby(date_col).size().reset_index(name="count")
+        if not daily.empty:
+            fig_day = px.line(daily, x=date_col, y="count", markers=True, title="Dreams per day")
+            fig_day.update_layout(xaxis_title="Date")
+            st.plotly_chart(fig_day, use_container_width=True)
+        else:
+            st.write("No date information available.")
     else:
-        st.write("No date information available.")
-
-with t2:
-    st.subheader("Tag frequency over time (cumulative)")
-    suggested = top_tags["tag"].head(12).tolist() if not top_tags.empty else []
-    
-    # Get all unique tags for autocomplete
-    all_tags = set()
-    for _, r in df.iterrows():
-        tb = r.get("tags_by_type", {}) or {}
-        if sel_type == "ALL":
-            for v in tb.values():
-                all_tags.update(v)
-        else:
-            all_tags.update(tb.get(sel_type, []))
-    all_tags_sorted = sorted(list(all_tags))
-    
-    # Allow users to select from suggestions or add custom tags
-    selected_tags = st.multiselect(
-        "Select tags to show (suggested top tags + custom tags)", 
-        all_tags_sorted,
-        default=suggested[:6],
-        help="Start typing to filter or add custom tags",
-        key="temporal_tags"
-    )
-    
-    if selected_tags:
-        rows = []
-        for _, r in df.iterrows():
-            tb = r.get("tags_by_type", {}) or {}
-            candidates = []
-            if sel_type == "ALL":
-                for v in tb.values():
-                    candidates += v
-            else:
-                candidates = tb.get(sel_type, [])
-            for t in candidates:
-                if t in selected_tags:
-                    rows.append((r["dream_date"], t))
-        tt = pd.DataFrame(rows, columns=["date","tag"]) if rows else pd.DataFrame(columns=["date","tag"])
-        if not tt.empty:
-            heat = tt.groupby(["date","tag"]).size().reset_index(name="count")
-            pivot = heat.pivot(index="date", columns="tag", values="count").fillna(0)
-            # Sort by date to ensure correct cumulative calculation
-            pivot = pivot.sort_index()
-            # Calculate cumulative sum
-            cumulative = pivot.cumsum()
-            
-            # For each tag, only show data starting from first occurrence
-            cumulative_trimmed = cumulative.copy()
-            for col in cumulative_trimmed.columns:
-                first_occurrence = (cumulative[col] > 0).idxmax()
-                cumulative_trimmed.loc[:first_occurrence, col] = None
-            
-            # Create line chart manually with individual traces for better hover control
-            fig_line = go.Figure()
-            for tag in cumulative_trimmed.columns:
-                data = cumulative_trimmed[tag].dropna()
-                fig_line.add_trace(go.Scatter(
-                    x=data.index,
-                    y=data.values,
-                    mode='lines+markers',
-                    name=tag,
-                    hovertemplate=f'<b>{tag}</b><br>Date: %{{x}}<br>Count: %{{y}}<extra></extra>'
-                ))
-            
-            fig_line.update_layout(
-                title="Tag frequency over time (cumulative)",
-                xaxis_title="Date",
-                yaxis_title="Cumulative Count",
-                hovermode="x"
-            )
-            st.plotly_chart(fig_line, use_container_width=True)
-        else:
-            st.info("No occurrences for selected tags in the data.")
+        st.write("Date column not found. Available columns:", df.columns.tolist())
 # -------------------------
 # Heatmap: Day-of-week
 # -------------------------
