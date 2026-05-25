@@ -231,7 +231,26 @@ with t1:
 with t2:
     st.subheader("Tag frequency over time (stacked area)")
     suggested = top_tags["tag"].head(12).tolist() if not top_tags.empty else []
-    selected_tags = st.multiselect("Select tags to show (suggested top tags)", suggested, default=suggested[:6])
+    
+    # Get all unique tags for autocomplete
+    all_tags = set()
+    for _, r in df.iterrows():
+        tb = r.get("tags_by_type", {}) or {}
+        if sel_type == "ALL":
+            for v in tb.values():
+                all_tags.update(v)
+        else:
+            all_tags.update(tb.get(sel_type, []))
+    all_tags_sorted = sorted(list(all_tags))
+    
+    # Allow users to select from suggestions or add custom tags
+    selected_tags = st.multiselect(
+        "Select tags to show (suggested top tags + custom tags)", 
+        all_tags_sorted,
+        default=suggested[:6],
+        help="Start typing to filter or add custom tags"
+    )
+    
     if selected_tags:
         rows = []
         for _, r in df.iterrows():
