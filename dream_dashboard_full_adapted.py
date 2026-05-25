@@ -229,7 +229,7 @@ with t1:
         st.write("No date information available.")
 
 with t2:
-    st.subheader("Tag frequency over time (stacked area)")
+    st.subheader("Tag frequency over time (cumulative stacked area)")
     suggested = top_tags["tag"].head(12).tolist() if not top_tags.empty else []
     
     # Get all unique tags for autocomplete
@@ -248,7 +248,8 @@ with t2:
         "Select tags to show (suggested top tags + custom tags)", 
         all_tags_sorted,
         default=suggested[:6],
-        help="Start typing to filter or add custom tags"
+        help="Start typing to filter or add custom tags",
+        key="temporal_tags"
     )
     
     if selected_tags:
@@ -268,7 +269,11 @@ with t2:
         if not tt.empty:
             heat = tt.groupby(["month","tag"]).size().reset_index(name="count")
             pivot = heat.pivot(index="month", columns="tag", values="count").fillna(0)
-            st.area_chart(pivot)
+            # Sort by month to ensure correct cumulative calculation
+            pivot = pivot.sort_index()
+            # Calculate cumulative sum
+            cumulative = pivot.cumsum()
+            st.area_chart(cumulative)
         else:
             st.info("No occurrences for selected tags in the data.")
 # -------------------------
