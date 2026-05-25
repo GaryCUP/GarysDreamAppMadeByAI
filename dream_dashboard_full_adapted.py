@@ -229,7 +229,7 @@ with t1:
         st.write("No date information available.")
 
 with t2:
-    st.subheader("Tag frequency over time (cumulative stacked area)")
+    st.subheader("Tag frequency over time (cumulative)")
     suggested = top_tags["tag"].head(12).tolist() if not top_tags.empty else []
     
     # Get all unique tags for autocomplete
@@ -273,7 +273,15 @@ with t2:
             pivot = pivot.sort_index()
             # Calculate cumulative sum
             cumulative = pivot.cumsum()
-            st.area_chart(cumulative)
+            
+            # Create line chart
+            fig_line = px.line(cumulative, markers=True, title="Tag frequency over time (cumulative)")
+            fig_line.update_layout(
+                xaxis_title="Month",
+                yaxis_title="Cumulative Count",
+                hovermode="x unified"
+            )
+            st.plotly_chart(fig_line, use_container_width=True)
         else:
             st.info("No occurrences for selected tags in the data.")
 # -------------------------
