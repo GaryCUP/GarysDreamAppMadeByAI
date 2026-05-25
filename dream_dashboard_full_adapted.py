@@ -219,12 +219,12 @@ st.header("Temporal Trends")
 t1, t2 = st.columns(2)
 
 with t1:
-    st.subheader("Dreams per month")
-    monthly = df.groupby("year_month").size().reset_index(name="count")
-    if not monthly.empty:
-        fig_month = px.line(monthly, x="year_month", y="count", markers=True, title="Dreams per month")
-        fig_month.update_layout(xaxis_title="Month")
-        st.plotly_chart(fig_month, use_container_width=True)
+    st.subheader("Dreams per day")
+    daily = df.groupby("dream_date").size().reset_index(name="count")
+    if not daily.empty:
+        fig_day = px.line(daily, x="dream_date", y="count", markers=True, title="Dreams per day")
+        fig_day.update_layout(xaxis_title="Date")
+        st.plotly_chart(fig_day, use_container_width=True)
     else:
         st.write("No date information available.")
 
@@ -264,12 +264,12 @@ with t2:
                 candidates = tb.get(sel_type, [])
             for t in candidates:
                 if t in selected_tags:
-                    rows.append((r["year_month"], t))
-        tt = pd.DataFrame(rows, columns=["month","tag"]) if rows else pd.DataFrame(columns=["month","tag"])
+                    rows.append((r["dream_date"], t))
+        tt = pd.DataFrame(rows, columns=["date","tag"]) if rows else pd.DataFrame(columns=["date","tag"])
         if not tt.empty:
-            heat = tt.groupby(["month","tag"]).size().reset_index(name="count")
-            pivot = heat.pivot(index="month", columns="tag", values="count").fillna(0)
-            # Sort by month to ensure correct cumulative calculation
+            heat = tt.groupby(["date","tag"]).size().reset_index(name="count")
+            pivot = heat.pivot(index="date", columns="tag", values="count").fillna(0)
+            # Sort by date to ensure correct cumulative calculation
             pivot = pivot.sort_index()
             # Calculate cumulative sum
             cumulative = pivot.cumsum()
@@ -289,12 +289,12 @@ with t2:
                     y=data.values,
                     mode='lines+markers',
                     name=tag,
-                    hovertemplate=f'<b>{tag}</b><br>Month: %{{x}}<br>Count: %{{y}}<extra></extra>'
+                    hovertemplate=f'<b>{tag}</b><br>Date: %{{x}}<br>Count: %{{y}}<extra></extra>'
                 ))
             
             fig_line.update_layout(
                 title="Tag frequency over time (cumulative)",
-                xaxis_title="Month",
+                xaxis_title="Date",
                 yaxis_title="Cumulative Count",
                 hovermode="x"
             )
