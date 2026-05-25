@@ -220,7 +220,7 @@ t1, t2 = st.columns(2)
 
 with t1:
     st.subheader("Dreams per day")
-    daily = df.groupby("dream_date").size().reset_index(name="count")
+    daily = df.groupby("date").size().reset_index(name="count")
     if not daily.empty:
         fig_day = px.line(daily, x="dream_date", y="count", markers=True, title="Dreams per day")
         fig_day.update_layout(xaxis_title="Date")
