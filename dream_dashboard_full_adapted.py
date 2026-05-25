@@ -271,11 +271,10 @@ with t2:
             st.area_chart(pivot)
         else:
             st.info("No occurrences for selected tags in the data.")
-
 # -------------------------
 # Heatmap: Day-of-week
 # -------------------------
-st.header("Day-of-week heatmap (top tags)")
+st.header("Day-of-week heatmap")
 def build_weekday_table_for_type(tags_list, ttype):
     rows = []
     for _, r in df.iterrows():
@@ -297,13 +296,35 @@ def build_weekday_table_for_type(tags_list, ttype):
     cols_present = [d for d in weekdays if d in table.columns]
     return table[cols_present]
 
+# Get all unique tags for selection
+all_tags_for_heatmap = set()
+for _, r in df.iterrows():
+    tb = r.get("tags_by_type", {}) or {}
+    if sel_type == "ALL":
+        for v in tb.values():
+            all_tags_for_heatmap.update(v)
+    else:
+        all_tags_for_heatmap.update(tb.get(sel_type, []))
+all_tags_for_heatmap = sorted(list(all_tags_for_heatmap))
+
+# Default to top 10 for initial display
 top10_for_type = flatten_tags_by_type(df, sel_type)["tag"].value_counts().head(10).index.tolist() if not flat_for_sel.empty else []
-heat_tbl = build_weekday_table_for_type(top10_for_type, sel_type)
+
+# Allow users to select any tags
+selected_heatmap_tags = st.multiselect(
+    "Select tags for heatmap (or add custom tags)",
+    all_tags_for_heatmap,
+    default=top10_for_type,
+    key="heatmap_tags",
+    help="Start typing to filter or select any available tags"
+)
+
+heat_tbl = build_weekday_table_for_type(selected_heatmap_tags, sel_type)
 if not heat_tbl.empty:
     fig_heat = px.imshow(heat_tbl.values, x=heat_tbl.columns, y=heat_tbl.index, aspect="auto", title="Tag by weekday heatmap")
     st.plotly_chart(fig_heat, use_container_width=True)
 else:
-    st.write("Not enough data for heatmap for the selected type.")
+    st.write("Not enough data for heatmap with selected tags.")
 
 # -------------------------
 # Co-occurrence Network
@@ -318,40 +339,66 @@ for _, r in df.iterrows():
         candidates = tb.get(sel_type, [])
     for a,b in combinations(sorted(set(candidates)), 2):
         edge_list.append((a,b))
+
 if edge_list:
     edge_df = pd.Series(edge_list).value_counts().reset_index(name="weight")
     edge_df[["tag1","tag2"]] = pd.DataFrame(edge_df["index"].tolist(), index=edge_df.index)
     edge_df = edge_df.drop(columns=["index"])
+    
+    # Get all unique tags that appear in edges
+    all_network_tags = sorted(list(set(edge_df["tag1"].tolist() + edge_df["tag2"].tolist())))
+    
+    # Allow users to filter the network by selecting specific tags
+    selected_network_tags = st.multiselect(
+        "Select tags to include in network (leave empty for all top edges)",
+        all_network_tags,
+        key="network_tags",
+        help="Filter network to show only edges involving selected tags"
+    )
+    
+    # Filter edges based on selected tags
+    if selected_network_tags:
+        filtered_edges = edge_df[
+            (edge_df["tag1"].isin(selected_network_tags)) | 
+            (edge_df["tag2"].isin(selected_network_tags))
+        ]
+    else:
+        filtered_edges = edge_df
+    
     max_edges = st.slider("Max edges to show in network", 20, 500, 120)
-    top_edges = edge_df.head(max_edges)
+    top_edges = filtered_edges.head(max_edges)
+    
     G = nx.Graph()
     for _, r in top_edges.iterrows():
         G.add_edge(r["tag1"], r["tag2"], weight=int(r["weight"]))
-    node_sizes = {t: (1 + (tag_counts.get(t,0) if not tag_counts.empty else 0)) for t in G.nodes()}
-    pos = nx.spring_layout(G, k=0.5, seed=42)
-    edge_x=[]; edge_y=[]
-    for e in G.edges():
-        x0,y0 = pos[e[0]]
-        x1,y1 = pos[e[1]]
-        edge_x += [x0, x1, None]
-        edge_y += [y0, y1, None]
-    node_x=[]; node_y=[]; text=[]; size=[]
-    for n in G.nodes():
-        x,y = pos[n]
-        node_x.append(x); node_y.append(y)
-        text.append(f"{n} ({tag_counts.get(n,0) if not tag_counts.empty else 0})")
-        size.append(math.sqrt(node_sizes[n]) * 6 + 6)
-    edge_trace = go.Scatter(x=edge_x, y=edge_y, mode='lines', line=dict(width=1), hoverinfo='none')
-    node_trace = go.Scatter(x=node_x, y=node_y, mode='markers+text', text=[n for n in G.nodes()], textposition="top center",
-                            hovertext=text, marker=dict(size=size, showscale=False))
-    fig_net = go.Figure(data=[edge_trace, node_trace])
-    fig_net.update_layout(title="Tag co-occurrence network", showlegend=False,
-                          xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                          yaxis=dict(showgrid=False, zeroline=False, showticklabels=False), height=600)
-    st.plotly_chart(fig_net, use_container_width=True)
+    
+    if len(G.nodes()) > 0:
+        node_sizes = {t: (1 + (tag_counts.get(t,0) if not tag_counts.empty else 0)) for t in G.nodes()}
+        pos = nx.spring_layout(G, k=0.5, seed=42)
+        edge_x=[]; edge_y=[]
+        for e in G.edges():
+            x0,y0 = pos[e[0]]
+            x1,y1 = pos[e[1]]
+            edge_x += [x0, x1, None]
+            edge_y += [y0, y1, None]
+        node_x=[]; node_y=[]; text=[]; size=[]
+        for n in G.nodes():
+            x,y = pos[n]
+            node_x.append(x); node_y.append(y)
+            text.append(f"{n} ({tag_counts.get(n,0) if not tag_counts.empty else 0})")
+            size.append(math.sqrt(node_sizes[n]) * 6 + 6)
+        edge_trace = go.Scatter(x=edge_x, y=edge_y, mode='lines', line=dict(width=1), hoverinfo='none')
+        node_trace = go.Scatter(x=node_x, y=node_y, mode='markers+text', text=[n for n in G.nodes()], textposition="top center",
+                                hovertext=text, marker=dict(size=size, showscale=False))
+        fig_net = go.Figure(data=[edge_trace, node_trace])
+        fig_net.update_layout(title="Tag co-occurrence network", showlegend=False,
+                              xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                              yaxis=dict(showgrid=False, zeroline=False, showticklabels=False), height=600)
+        st.plotly_chart(fig_net, use_container_width=True)
+    else:
+        st.write("No nodes to display with selected tag filters.")
 else:
     st.write("No co-occurring tags found for selected type.")
-
 # -------------------------
 # NEW: Degrees of Separation
 # -------------------------
