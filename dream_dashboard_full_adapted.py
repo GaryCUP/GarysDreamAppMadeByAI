@@ -274,8 +274,15 @@ with t2:
             # Calculate cumulative sum
             cumulative = pivot.cumsum()
             
+            # Remove rows before each tag reaches 1 (i.e., keep only from first occurrence)
+            cumulative_trimmed = cumulative.loc[(cumulative > 0).any(axis=1)]
+            for col in cumulative_trimmed.columns:
+                first_nonzero = (cumulative_trimmed[col] > 0).idxmax()
+                cumulative_trimmed.loc[:first_nonzero, col] = 0
+                cumulative_trimmed.loc[first_nonzero:, col] = cumulative.loc[first_nonzero:, col]
+            
             # Create line chart
-            fig_line = px.line(cumulative, markers=True, title="Tag frequency over time (cumulative)")
+            fig_line = px.line(cumulative_trimmed, markers=True, title="Tag frequency over time (cumulative)")
             fig_line.update_layout(
                 xaxis_title="Month",
                 yaxis_title="Cumulative Count",
