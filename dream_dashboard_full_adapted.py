@@ -222,7 +222,7 @@ with t1:
     st.subheader("Dreams per day")
     daily = df.groupby("date").size().reset_index(name="count")
     if not daily.empty:
-        fig_day = px.line(daily, x="dream_date", y="count", markers=True, title="Dreams per day")
+        fig_day = px.line(daily, x="date", y="count", markers=True, title="Dreams per day")
         fig_day.update_layout(xaxis_title="Date")
         st.plotly_chart(fig_day, use_container_width=True)
     else:
@@ -264,7 +264,7 @@ with t2:
                 candidates = tb.get(sel_type, [])
             for t in candidates:
                 if t in selected_tags:
-                    rows.append((r["dream_date"], t))
+                    rows.append((r["date"], t))
         tt = pd.DataFrame(rows, columns=["date","tag"]) if rows else pd.DataFrame(columns=["date","tag"])
         if not tt.empty:
             heat = tt.groupby(["date","tag"]).size().reset_index(name="count")
